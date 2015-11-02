@@ -70,8 +70,10 @@
 		    dataType: 'xml',
 		    success: function(data) {
 		    	var listFeeds = {};
+		    	alert(sheetUrl);
 		    	$(data).find('entry').each(function(){
 		    		var name = $(this).find('content').text();
+		    		console.log('name');
 		    		$(this).find('link').each(function(){
 		    			if($(this).attr('rel') === "http://schemas.google.com/spreadsheets/2006#listfeed") {
 		    				listFeeds[name] = $(this).attr('href');
