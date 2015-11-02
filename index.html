@@ -57,7 +57,7 @@
 			$('#correction-wrapper').slideUp();
 			$('#corrections').empty();
 			$('#export-table').empty();
-			var sheetUrl='https://spreadsheets.google.com/feeds/worksheets/'+$('#sheet input').val()+'/public/full';
+			var sheetUrl='http://spreadsheets.google.com/feeds/worksheets/'+$('#sheet input').val()+'/public/full';
 			getWorksheets(sheetUrl);
 		});
 	});
@@ -70,10 +70,8 @@
 		    dataType: 'xml',
 		    success: function(data) {
 		    	var listFeeds = {};
-		    	alert(sheetUrl);
 		    	$(data).find('entry').each(function(){
 		    		var name = $(this).find('content').text();
-		    		console.log('name');
 		    		$(this).find('link').each(function(){
 		    			if($(this).attr('rel') === "http://schemas.google.com/spreadsheets/2006#listfeed") {
 		    				listFeeds[name] = $(this).attr('href');
