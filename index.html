@@ -74,7 +74,8 @@
 		    		var name = $(this).find('content').text();
 		    		$(this).find('link').each(function(){
 		    			if($(this).attr('rel') === "http://schemas.google.com/spreadsheets/2006#listfeed") {
-		    				listFeeds[name] = $(this).attr('href');
+		    				listFeeds[name] = $(this).attr('href').replace("https:", "http:");
+		    				console.log(listFeeds[name]);
 		    			}
 		    		});    		
 		  		});
