@@ -1,0 +1,456 @@
+<html>
+<head>
+<style type="text/css">
+	.good {
+		background-color:#DDFFDD;
+	}
+	.bad {
+		background-color:#FFDDDD;
+	}
+
+	body {
+		position: absolute;
+		top: 0px; bottom: 0px;
+		left: 0px; right: 0px;
+		font-size: 0px;
+		text-align: center;
+	}
+
+	body:before {
+	  content: '';
+	  display: inline-block;
+	  height: 100%;
+	  vertical-align: middle;
+	}
+
+	#content {
+		max-width: 700px;
+		margin: 40px;
+		display: inline-block;
+		vertical-align: middle;
+		text-align: left;
+	}
+
+	#sheet input {
+		width: 500px;
+		display: inline;
+	}
+
+	#sheet button {
+		display: inline;
+	}
+
+	#export-scroll {
+		width: 500px;
+		height: 300px;
+		overflow: auto;
+	}
+</style>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+<script type="text/javascript">
+	var namesList;
+	var pages;
+
+	$(document).ready(function() {
+		$('#sheet button').on('click', function() {
+			$('#export-wrapper').slideUp();
+			$('#correction-wrapper').slideUp();
+			$('#corrections').empty();
+			$('#export-table').empty();
+			var sheetUrl='https://spreadsheets.google.com/feeds/worksheets/'+$('#sheet input').val()+'/public/full';
+			getWorksheets(sheetUrl);
+		});
+	});
+
+	// https://spreadsheets.google.com/feeds/worksheets/110COAd1mCVUHQ0zURb0T8iNAxLvYUY7RGA5Cu08gCaQ/public/full
+
+	function getWorksheets(sheetUrl) {
+		$.ajax({
+		    url: sheetUrl,
+		    dataType: 'xml',
+		    success: function(data) {
+		    	var listFeeds = {};
+		    	$(data).find('entry').each(function(){
+		    		var name = $(this).find('content').text();
+		    		$(this).find('link').each(function(){
+		    			if($(this).attr('rel') === "http://schemas.google.com/spreadsheets/2006#listfeed") {
+		    				listFeeds[name] = $(this).attr('href');
+		    			}
+		    		});    		
+		  		});
+
+			  	if(!("Names" in listFeeds)) {
+			  		alert("Worksheet \"Names\" not found.");
+			  		return;
+			  	}
+				
+				if(!("Pages" in listFeeds)) {
+			  		alert("Worksheet \"Pages\" not found.");
+			  		return;
+			  	}
+
+			  	$.when(getPages(listFeeds['Pages']), getNames(listFeeds['Names'])).done(function(pagesRequest, namesRequest){
+			  		printCorrections();
+			  	});
+		    },
+				error: function() { alert("Error: Could not fetch worksheets."); }
+		  });
+	}
+
+	function getPages(listFeed) {
+		return $.ajax({
+		    url: listFeed,
+		    dataType: 'xml',
+		    success: function(data) {
+		    	pages = new Array();
+		    	$(data).find("entry").each(function(){
+		    		pages.push([$(this).find("page").text(), $(this).find("names").text()]);
+		  		});
+			},
+			error: function() { alert("Error: Could not fetch data from Pages worksheet."); }
+		});		
+	}
+
+	function getNames(listFeed) {
+		return $.ajax({
+			url: listFeed,
+			dataType: 'xml',
+			success: function(data) {
+				namesList = new Array();
+				$(data).find("entry").each(function(){
+					namesList.push([$(this).find("name").text(), ""]);
+				});
+			},
+			error: function() { alert("Error: Could not fetch data from Names worksheet."); }
+		});
+	}
+
+	function printCorrections() {
+		var modified = {};
+		pages.forEach(function(pgdata) {
+			if(!isValid(pgdata[1])) {
+				modified[pgdata[0]] = pgdata[1];
+			}
+		});
+
+		if(Object.keys(modified).length > 0 ) {
+			for(var page in modified) {
+				var highlighted = highlight(modified[page]);
+				var clean = process(modified[page]);
+				$('#corrections').append(
+					'<tr>'+
+						'<td class="page">'+page+'</td>'+
+						'<td>'+
+							'<span class="highlighted">'+highlighted+'</span>'+
+							'<textarea class="edit" style="display:none;">'+modified[page]+'</textarea>'+
+						'</td>'+
+						'<td class="clean">'+clean+'</td>'+
+						'<td><button type="button" class="modify">Modify</button></td>'+
+					'</tr>'
+				);
+			}
+
+			$('#correction-wrapper').slideDown();
+
+			$('.modify').on('click', function() {
+				var highlighted = $(this).parents('tr').children().children('.highlighted');
+				var editbox = $(this).parents('tr').children().children('.edit');
+				var clean = $(this).parents('tr').children('.clean');
+				var page = $(this).parents('tr').children('.page').text();
+
+				if(highlighted.is(':visible')) {
+					highlighted.hide();
+					editbox.show();
+					$(this).html('OK');
+				}
+				else {
+					editbox.hide();
+					modified[page] = editbox.val();
+
+					highlighted.html(highlight(modified[page])).show();
+					clean.html(process(modified[page]));
+
+					$(this).html('Modify');
+				}
+			});
+		}
+		else {
+			clearSelection();
+			$('#export-table').empty();
+
+			pages.forEach(function(pgdata) {
+				if(pgdata[0] in modified) {
+					pgdata[1] = process(modified[pgdata[0]]);
+				}
+			});
+
+			generateIndex();
+			namesList.forEach(function(namedata) {
+				$('#export-table').append(
+					'<tr>'+
+						'<td>'+namedata[0]+'</td>'+
+						'<td>'+namedata[1]+'</td>'+
+					'</tr>'
+				);
+			});
+
+			$('#select-all').on('click', function() {
+				selectText('export-scroll');
+			});
+
+			$('#export-wrapper').slideDown();
+		}
+
+		$('#export').on('click', function() {
+			clearSelection();
+			$('#export-table').empty();
+			$('#export-table').append(
+					'<tr>'+
+						'<td>Page</td>'+
+						'<td>Names</td>'+
+					'</tr>'
+				);
+
+			pages.forEach(function(pgdata) {
+				if(pgdata[0] in modified) {
+					pgdata[1] = process(modified[pgdata[0]]);
+				}
+				$('#export-table').append(
+					'<tr>'+
+						'<td>'+pgdata[0]+'</td>'+
+						'<td>'+pgdata[1]+'</td>'+
+					'</tr>'
+				);
+			});
+
+			$('#export-wrapper').slideDown();
+
+			$('#select-all').on('click', function() {
+				selectText('export-scroll');
+			});
+		});
+
+		$('#index').on('click', function() {
+			clearSelection();
+			$('#export-table').empty();
+
+			pages.forEach(function(pgdata) {
+				if(pgdata[0] in modified) {
+					pgdata[1] = process(modified[pgdata[0]]);
+				}
+			});
+
+			generateIndex();
+			namesList.forEach(function(namedata) {
+				$('#export-table').append(
+					'<tr>'+
+						'<td>'+namedata[0]+'</td>'+
+						'<td>'+namedata[1]+'</td>'+
+					'</tr>'
+				);
+			});
+
+			$('#select-all').on('click', function() {
+				selectText('export-scroll');
+			});
+
+			$('#export-wrapper').slideDown();
+		});
+	}
+
+	function selectText(element) {
+	    var doc = document
+	        , text = doc.getElementById(element)
+	        , range, selection
+	    ;    
+	    if (doc.body.createTextRange) {
+	        range = document.body.createTextRange();
+	        range.moveToElementText(text);
+	        range.select();
+	    } else if (window.getSelection) {
+	        selection = window.getSelection();        
+	        range = document.createRange();
+	        range.selectNodeContents(text);
+	        selection.removeAllRanges();
+	        selection.addRange(range);
+	    }
+	}
+
+	function clearSelection() {
+	    if ( document.selection ) {
+	        document.selection.empty();
+	    } else if ( window.getSelection ) {
+	        window.getSelection().removeAllRanges();
+	    }
+	}	
+
+	function generateIndex() {
+		namesList.forEach(function(namedata){
+			namedata[1] = "";
+		});
+
+		pages.forEach(function(pgdata) {
+			var names = pgdata[1].split(",");
+			names.forEach(function(name) {
+				var index = getIndex(name);
+				if(namesList[index][1].indexOf(pgdata[0]) < 1) {
+					if(namesList[index][1] != ""){
+						namesList[index][1] += ", ";
+					}
+					namesList[index][1] += pgdata[0];
+				}
+			});
+		});
+	}
+
+  function getInput(listFeeds) {
+  	if(!("Names" in listFeeds)) {
+  		alert("Worksheet \"Names\" not found.");
+  	}
+
+  	if(!("Pages" in listFeeds)) {
+  		alert("Worksheet \"Pages\" not found.");
+  	}
+		
+ 	$.ajax({
+    url: listFeeds['Pages'],
+    dataType: 'xml',
+    success: function(data) {
+    	$(data).find("entry").each(function(){
+    		pages.push([$(this).find("page").text(), $(this).find("names").text()]);
+  		});
+  		$.ajax({
+		    url: listFeeds['Names'],
+		    dataType: "xml",
+		    success: function(data) {
+		    	$(data).find("entry").each(function(){
+		    		namesList.push([$(this).find("name").text(), ""]);
+		  		});
+		  		$('#content').append('<table id="corrections"></table>')
+		  		$('body').append('<table id="pages"></table>');
+		    	pages.forEach(function(pgdata) {
+		    		var clean;
+						if(!isValid(pgdata[1])) {
+							var highlighted = highlight(pgdata[1]);
+							clean = process(pgdata[1]);
+							$('#corrections').append('<tr><td>'+pgdata[0]+'</td><td><span class="highlighted">'+highlighted+'</span><input class="edit" type="textbox" value="'+pgdata[1]+'" style="display:none;" /></td><td class="clean">'+clean+'</td><td><button type="button" class="modify">Modify</button></td></tr>');
+						}
+						else {
+							clean = pgdata[1]
+						}
+						var names = clean.split(",");
+						names.forEach(function(name){
+							var index = getIndex(name);
+							if(namesList[index][1].indexOf(pgdata[0]) < 1){
+								if(namesList[index][1] != ""){
+									namesList[index][1] += ", ";
+								}
+								namesList[index][1] += pgdata[0];
+							}
+						});
+						$('#pages').append('<tr><td>' + pgdata[0] + '</td><td>' + clean + '</td>');
+					});
+					$('.modify').on('click', function() {
+						$(this).parents('tr').children().children('.highlighted').hide();
+        	$(this).parents('tr').children().children('.edit').show();
+					});
+	        $('.edit').on('blur', function() {
+	            var that = $(this);
+	            $(this).parents('tr').children().children('.highlighted'). html(highlight(that.val())).show();
+	            $(this).parents('tr').children('.clean').html(process(that.val())).show();
+	            that.hide();
+	        });
+					printIndex();
+		  	},
+				error: function() { alert("Error: Could not fetch data from Names worksheet."); }
+		  });
+	  	},
+			error: function() { alert("Error: Could not fetch data from Pages worksheet."); }
+	  });
+  }
+
+  function printIndex() {
+  	$('body').append('<table id="index"></table>');
+  	namesList.forEach(function(entry) {
+  		$('#index').append('<tr><td>' + entry[0] + '</td><td>' + entry[1] + '</td>');
+  	})
+  }
+
+  function process(pgdata) {
+  	var processed = "";
+  	namesList.forEach(function(entry) {
+  		if(pgdata.indexOf(entry[0]) >= 0) {
+  			if(processed.length > 0)
+  				processed += ',';
+  			processed += entry[0];
+  		}
+  	});
+		return processed;
+  }
+
+	function highlight(pgdata) {
+		for(var i = 0; i < namesList.length; i++) {
+			pgdata = pgdata.replace(namesList[i][0], "<span class=\"good\">"+namesList[i][0]+"</span>");
+		}
+		var split = pgdata.split(new RegExp("<span class=\"good\">[^<]*</span>"));
+		for(var i = 0; i < split.length; i++) {
+			var replace = split[i].replace(/([A-Za-z'-]+)/g, "<span class=\"bad\">$1</span>");
+			pgdata = pgdata.replace(split[i], replace);
+		}
+		return pgdata;
+	}
+
+	function isValid(pgdata) {
+		var names = pgdata.split(",");
+		for(var i = 0; i < names.length; i++) {
+			var isPresent = false;
+			for(var j = 0; j < namesList.length && !isPresent; j++) {
+					isPresent = names[i] === namesList[j][0];
+			}
+			if(!isPresent) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function getIndex(name) {
+	    var index = -1;
+	    namesList.forEach(function(item, i){
+	    	if (item[0] == name) {
+			   index = i;
+			   return false;
+	        };
+	    });
+	    return index;
+	}
+
+	/*list.forEach(function(item){
+		//if(item[1].length == 2)
+		//document.write("<p>" + item[0] + "</p>");
+		document.write("<p>" + item[0] + ":" + item[1] + "</p>");
+	});*/
+</script>
+</head>
+<body>
+	<div id="content">
+		<span id="sheet">
+			<input />
+			<button>Make index!</button>
+		</span>
+		<div id="correction-wrapper" style="display:none">
+			<table id="corrections"></table>
+			<span id="correction-options">
+				<button type="button" id="export">Export Changes</button>
+				<button type="button" id="index">Generate Index</button>				
+			</span>
+		</div>
+		<div id="export-wrapper" style="display:none">
+			<div id="export-scroll">
+				<table id="export-table"></table>
+			</div>
+			<button id="select-all">Select All</button>
+		</div>
+	</div>
+</body>
+</html>
